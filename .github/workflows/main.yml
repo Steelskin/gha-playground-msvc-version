@@ -1,0 +1,89 @@
+name: Install MSVC 14.42
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  MSVC_VERSION: 14.42
+  MSVC_VERSION_PACKAGE: 14.42.17.12
+
+jobs:
+  install_msvc_1442:
+    runs-on: windows-latest
+    steps:
+
+      - name: (Debug) List MSVC folder
+        run: |
+          $InstallerLocation = Join-Path "${env:ProgramFiles(x86)}" "Microsoft Visual Studio" "Installer"
+          echo $InstallerLocation
+          $VsWhere = Join-Path "${InstallerLocation}" "vswhere.exe"
+          echo $VsWhere
+          & "$VsWhere"
+          $InstallPath = (& "$VsWhere" -latest -products * -format json | ConvertFrom-Json).installationPath
+
+          # Debug listing
+          Get-ChildItem "${InstallPath}\VC\Tools\MSVC"
+
+      - name: Install MSVC ${{ env.MSVC_VERSION }}
+        run: |
+          $InstallerLocation = Join-Path "${env:ProgramFiles(x86)}" "Microsoft Visual Studio" "Installer"
+          echo $InstallerLocation
+          $VsWhere = Join-Path "${InstallerLocation}" "vswhere.exe"
+          echo $VsWhere
+          $VsInstaller = Join-Path "${InstallerLocation}" "vs_installer.exe"
+          echo $VsInstaller
+          $InstallPath = (& "$VsWhere" -latest -products * -format json | ConvertFrom-Json).installationPath
+          echo $InstallPath
+          $process = Start-Process "$VsInstaller" `
+              -PassThru `
+              -ArgumentList "modify", `
+                  "--installPath", "`"$InstallPath`"", `
+                  "--channelId", "https://aka.ms/vs/17/release/channel", `
+                  "--quiet", "--norestart", "--nocache", `
+                  "--add", "Microsoft.VisualStudio.Component.VC.${env:MSVC_VERSION_PACKAGE}.x86.x64", `
+                  "--add", "Microsoft.VisualStudio.Component.VC.${env:MSVC_VERSION_PACKAGE}.ATL", `
+                  "--add", "Microsoft.VisualStudio.Component.VC.${env:MSVC_VERSION_PACKAGE}.ARM64", `
+                  "--add", "Microsoft.VisualStudio.Component.VC.${env:MSVC_VERSION_PACKAGE}.ATL.ARM64"
+          $process.WaitForExit()
+
+          # Find the log file (latest dd_installer_* file in the temp directory)
+          $log = Get-ChildItem "${env:TEMP}" -Filter "dd_installer_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          # dump the log
+          Get-Content $log.FullName
+
+      - name: (Debug) Ensure MSVC 14.42 is installed
+        run: |
+          $InstallerLocation = Join-Path "${env:ProgramFiles(x86)}" "Microsoft Visual Studio" "Installer"
+          echo $InstallerLocation
+          $VsWhere = Join-Path "${InstallerLocation}" "vswhere.exe"
+          echo $VsWhere
+          & "$VsWhere"
+          $InstallPath = (& "$VsWhere" -latest -products * -format json | ConvertFrom-Json).installationPath
+
+          # Debug listing
+          Get-ChildItem "${InstallPath}\VC\Tools\MSVC"
+
+          # Find the 14.42.* folder.
+          $Found = $false
+          foreach ($Folder in Get-ChildItem "${InstallPath}\VC\Tools\MSVC") {
+            if ($Folder.Name -match "14.42") {
+              $Found = $true
+              break
+            }
+          }
+
+          if (-Not $Found) {
+            throw "MSVC 14.42 not found"
+          }
+
+      - uses: compnerd/gha-setup-vsdevenv@f1ba60d553a3216ce1b89abe0201213536bc7557 # main
+        with:
+          host_arch: x64
+          components: 'Microsoft.VisualStudio.Component.VC.${{ env.MSVC_VERSION_PACKAGE }}.x86.x64;Microsoft.VisualStudio.Component.VC.${{ env.MSVC_VERSION_PACKAGE }}.ATL;Microsoft.VisualStudio.Component.VC.${{ env.MSVC_VERSION_PACKAGE }}.ARM64;Microsoft.VisualStudio.Component.VC.${{ env.MSVC_VERSION_PACKAGE }}.ATL.ARM64'
+          arch: x64
+          toolset_version: ${{ env.MSVC_VERSION }}
+          verbose: true
